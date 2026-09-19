@@ -155,9 +155,13 @@
       background: transparent; border: 0; font-size: 11px; font-weight: 700; padding: 2px 0;
     }
     .phone-grid .day {
-      width: auto; min-width: 0; height: 48px; min-height: 48px;
+      width: auto; min-width: 0; height: 56px; min-height: 56px;
       border-radius: 10px; font-size: 16px; border: 1px solid #e7e5e4;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      line-height: 1.05; gap: 1px;
     }
+    .phone-grid .day .n { font-size: 14px; font-weight: 800; }
+    .phone-grid .day .st { font-size: 11px; font-weight: 800; letter-spacing: 0.02em; }
     .phone-grid .empty { background: transparent; border: 0; }
     header { padding: 14px 14px 10px; padding-top: max(14px, env(safe-area-inset-top)); }
     header h1 { font-size: 20px; }
@@ -404,8 +408,8 @@
           const iso = isoOf(p.year, m, d);
           const st = dayState(p.year, m, d);
           const wk = wd >= 5 ? " weekend" : "";
-          const label = st === "P" ? "½" : (st || d);
-          phone += `<div class="day ${st}${wk}" title="${HOL_NAMES[iso]||""}" data-y="${p.year}" data-m="${m}" data-d="${d}">${label}</div>`;
+          const mark = st === "P" ? "½" : st;
+          phone += `<div class="day ${st}${wk}" title="${HOL_NAMES[iso]||""}" data-y="${p.year}" data-m="${m}" data-d="${d}"><span class="n">${d}</span>${mark ? `<span class="st">${mark}</span>` : ""}</div>`;
         }
         phone += `</div></section>`;
       }
