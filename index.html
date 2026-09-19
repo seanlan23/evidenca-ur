@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Hours" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#1e3a4c" />
+  <title>Field rotation calendar 2026–2027</title>
+  <style>
+    :root {
+      --navy: #1e3a4c;
+      --teal: #0f766e;
+      --ink: #1c1917;
+      --muted: #57534e;
+      --work: #0f766e;
+      --home: #5b7c99;
+      --voz: #c2410c;
+      --dop: #4f46e5;
+      --empty: #faf8f5;
+      --weekend: #e8e4dc;
+      --invalid: #d6d3d1;
+      --plus: #147a3f;
+      --minus: #b91c1c;
+      --gold: #c4a35a;
+      --hol: #b45309;
+      --cream: #f7f3ec;
+    }
+    * { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
+      background: #efeae2;
+      color: var(--ink);
+    }
+    header {
+      background: var(--navy);
+      color: #fff;
+      padding: 16px 24px 12px;
+    }
+    header h1 { margin: 0 0 4px; font-size: 24px; font-weight: 700; }
+    header p { margin: 0; opacity: .85; font-size: 15px; }
+    .bar {
+      display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+      padding: 12px 20px; background: #fff; border-bottom: 1px solid #e7e5e4;
+      position: sticky; top: 0; z-index: 5;
+    }
+    .chip { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); }
+    .sq { width: 26px; height: 26px; border-radius: 5px; color: #fff; font-weight: 700; display: grid; place-items: center; font-size: 13px; }
+    .sq.w { background: var(--work); }
+    .sq.r { background: var(--home); }
+    .sq.p {
+      background: linear-gradient(to bottom right, var(--work) 50%, #faf8f5 50%);
+      color: var(--ink); border: 1px solid #d6d3d1;
+    }
+    .sq.v { background: var(--voz); }
+    .sq.d { background: var(--dop); }
+    .sq.h { background: var(--hol); }
+    .periods { display: flex; flex-wrap: wrap; gap: 8px; padding: 14px 20px 0; }
+    .periods button {
+      border: 1px solid #d6d3d1; background: #fff; color: var(--navy);
+      padding: 10px 16px; border-radius: 8px; font: 600 15px/1.3 -apple-system, BlinkMacSystemFont, sans-serif;
+      cursor: pointer;
+    }
+    .periods button.on { background: var(--navy); color: #fff; border-color: var(--navy); }
+    .nav { display: flex; gap: 8px; align-items: center; margin-left: auto; }
+    .nav button {
+      width: 40px; height: 40px; border: 1px solid #d6d3d1; background: #fff;
+      border-radius: 8px; font-size: 20px; cursor: pointer; color: var(--navy);
+    }
+    .wrap { padding: 14px 20px 36px; overflow-x: auto; }
+    table { border-collapse: collapse; background: #fff; }
+    th, td { border: 1px solid #e7e5e4; text-align: center; }
+    .head th { background: var(--navy); color: #fff; font-size: 13px; padding: 8px 3px; }
+    .head th.card-h { min-width: 168px; }
+    .month-card {
+      position: sticky; left: 0; z-index: 2;
+      text-align: left; padding: 8px 14px; background: var(--cream);
+      min-width: 168px; width: 168px; border-right: 2px solid var(--navy);
+    }
+    .m-name { font-weight: 700; font-size: 17px; color: var(--navy); }
+    .m-hours { font-weight: 700; font-size: 20px; margin-top: 2px; }
+    .m-hours span { font-size: 13px; font-weight: 600; color: var(--muted); }
+    .m-delta { font-weight: 700; font-size: 16px; margin-top: 2px; }
+    .m-delta.pos { color: var(--plus); }
+    .m-delta.neg { color: var(--minus); }
+    .m-delta.zero { color: var(--muted); }
+    .m-travel { font-size: 13px; font-weight: 700; color: var(--voz); margin-top: 4px; }
+    .m-travel span { font-weight: 600; color: var(--muted); }
+    .end-sum {
+      background: var(--cream); min-width: 88px; font-weight: 700; font-size: 15px;
+      padding: 4px 8px;
+    }
+    .end-sum.pos { color: var(--plus); }
+    .end-sum.neg { color: var(--minus); }
+    .day {
+      width: 42px; min-width: 42px; height: 42px; min-height: 42px; padding: 0;
+      cursor: pointer; user-select: none; background: var(--empty);
+      font-weight: 700; color: var(--ink); font-size: 15px;
+    }
+    .day.weekend { background: var(--weekend); }
+    .day.invalid { background: var(--invalid); cursor: default; color: transparent; }
+    .day.W { background: var(--work); color: #fff; }
+    .day.R { background: var(--home); color: #fff; }
+    .day.P {
+      background: linear-gradient(to bottom right, var(--work) 50%, var(--empty) 50%);
+      color: var(--ink);
+    }
+    .day.P.weekend {
+      background: linear-gradient(to bottom right, var(--work) 50%, var(--weekend) 50%);
+    }
+    .day.V { background: var(--voz); color: #fff; }
+    .day.D { background: var(--dop); color: #fff; }
+    .day.H { background: var(--hol); color: #fff; }
+    .wd { font-size: 11px; color: var(--muted); background: var(--empty); padding: 3px 0; }
+    .wd.weekend { background: var(--weekend); color: var(--voz); font-weight: 700; }
+    .wd.holiday { color: var(--gold); font-weight: 700; }
+    .total td { background: var(--navy); color: #fff; font-weight: 700; font-size: 15px; padding: 10px 8px; }
+    .summary { padding: 0 20px 24px; color: var(--muted); font-size: 15px; }
+    .summary b { color: var(--navy); }
+    .tools { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 20px 8px; }
+    .tools button, .tools label {
+      border: 1px solid #d6d3d1; background: #fff; color: var(--navy);
+      padding: 10px 14px; border-radius: 8px; font: 600 14px/1.3 -apple-system, BlinkMacSystemFont, sans-serif;
+      cursor: pointer;
+    }
+    .sync-box {
+      display: block; width: calc(100% - 40px); margin: 0 20px 8px;
+      min-height: 88px; padding: 10px 12px; border: 1px solid #d6d3d1;
+      border-radius: 8px; font: 13px ui-monospace, Menlo, monospace;
+      resize: vertical; background: #fff;
+    }
+    .sync-msg { padding: 0 20px 24px; font-size: 14px; color: var(--teal); font-weight: 600; }
+    .open-safari {
+      margin: 12px 12px 0; padding: 12px 14px; border-radius: 12px;
+      background: #fff4e5; color: #9a3412; font-size: 15px; font-weight: 600; line-height: 1.4;
+    }
+    .open-safari[hidden] { display: none; }
+    .nav { display: none; }
+    .desktop { display: none; }
+    .phone { display: block; padding: 12px 12px 28px; }
+    .phone-tip { display: block; padding: 0 14px 16px; font-size: 15px; color: var(--muted); line-height: 1.45; }
+    .phone-month {
+      background: #fff; border-radius: 14px; margin-bottom: 14px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.06); overflow: hidden;
+    }
+    .phone-head { padding: 12px 14px 8px; background: var(--cream); }
+    .phone-grid {
+      display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; padding: 8px 8px 12px;
+    }
+    .phone-grid .wd {
+      background: transparent; border: 0; font-size: 11px; font-weight: 700; padding: 2px 0;
+    }
+    .phone-grid .day {
+      width: auto; min-width: 0; height: 48px; min-height: 48px;
+      border-radius: 10px; font-size: 16px; border: 1px solid #e7e5e4;
+    }
+    .phone-grid .empty { background: transparent; border: 0; }
+    header { padding: 14px 14px 10px; padding-top: max(14px, env(safe-area-inset-top)); }
+    header h1 { font-size: 20px; }
+    header p { font-size: 13px; }
+    .bar { padding: 8px 12px; gap: 8px; }
+    .chip { font-size: 13px; }
+    .periods { padding: 10px 12px 0; }
+    .periods button { flex: 1 1 46%; padding: 12px 8px; min-height: 44px; }
+    .tools { padding: 0 12px 8px; }
+    .tools button, .tools label { min-height: 44px; flex: 1 1 40%; text-align: center; }
+    .sync-box { width: calc(100% - 24px); margin: 0 12px 8px; }
+    .sync-msg { padding: 0 12px 28px; }
+    @media (min-width: 821px) and (hover: hover) and (pointer: fine) {
+      .open-safari { display: none; }
+      header { padding: 16px 24px 12px; }
+      header h1 { font-size: 24px; }
+      header p { font-size: 15px; }
+      .bar { padding: 12px 20px; gap: 10px; }
+      .chip { font-size: 14px; }
+      .nav { display: flex; }
+      .periods { padding: 14px 20px 0; }
+      .periods button { flex: 0 0 auto; padding: 10px 16px; min-height: 0; }
+      .desktop { display: block; }
+      .phone, .phone-tip { display: none; }
+      .tools { padding: 0 20px 8px; }
+      .tools button, .tools label { min-height: 0; flex: 0 0 auto; }
+      .sync-box { width: calc(100% - 40px); margin: 0 20px 8px; }
+      .sync-msg { padding: 0 20px 24px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Field rotation calendar</h1>
+    <p>Hours count from August 2026. Click: work → half day → home → travel → leave → empty.</p>
+  </header>
+  <div class="bar">
+    <div class="chip"><span class="sq w">W</span> Work · 6:30–17:00 · 10h / Sat 6h</div>
+    <div class="chip"><span class="sq p">½</span> Half day · home at 12:00 · 5h</div>
+    <div class="chip"><span class="sq r">R</span> Rotation · at home · 0h</div>
+    <div class="chip"><span class="sq v">V</span> Travel · 10h paid separately</div>
+    <div class="chip"><span class="sq d">D</span> Leave · 8h</div>
+    <div class="chip"><span class="sq h">H</span> Public holiday Salzgitter · 0h</div>
+    <div class="nav">
+      <button type="button" id="prev" aria-label="Previous 6 months">‹</button>
+      <button type="button" id="next" aria-label="Next 6 months">›</button>
+    </div>
+  </div>
+  <p class="open-safari" id="openSafari">Koledar se tu ne odpre — to je samo predogled. Tapni ikono za deljenje → <b>Open in Safari</b>. Tam se pokažejo meseci.</p>
+  <div class="periods" id="periods"></div>
+  <p class="phone-tip">In Safari: Share → Add to Home Screen. Copy or Share hours to the other device — do not download a file.</p>
+  <div class="wrap desktop" id="app"></div>
+  <div class="phone" id="appPhone"></div>
+  <p class="summary" id="summary"></p>
+  <div class="tools">
+    <button type="button" id="copyBtn">Copy hours</button>
+    <button type="button" id="shareBtn">Share hours</button>
+    <button type="button" id="pasteBtn">Paste hours</button>
+    <label>Import file<input type="file" id="importFile" accept=".json,.txt,text/plain,application/json" hidden /></label>
+  </div>
+  <textarea id="syncBox" class="sync-box" placeholder="Hours appear here. On the other device: paste, then tap Apply pasted hours."></textarea>
+  <div class="tools">
+    <button type="button" id="applyBtn">Apply pasted hours</button>
+  </div>
+  <p class="sync-msg" id="syncMsg" hidden></p>
+  <script>
+    const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+    const WD = ["Mo","Tu","We","Th","Fr","Sa","Su"];
+    const STATES = ["", "W", "P", "R", "V", "D"];
+    const PAVSAL = 176, H_WD = 10, H_SAT = 6, H_SUN = 0, H_POL = 5, H_V = 10, H_D = 8;
+    const COUNT_FROM = { year: 2026, month: 8 };
+    const KEY = "koledar-rotacija-2026-2027";
+    const VIEW_KEY = "koledar-rotacija-view";
+    const PERIODS = [
+      { year: 2026, from: 1, to: 6, label: "2026  jan – jun" },
+      { year: 2026, from: 7, to: 12, label: "2026  jul – dec" },
+      { year: 2027, from: 1, to: 6, label: "2027  jan – jun" },
+      { year: 2027, from: 7, to: 12, label: "2027  jul – dec" },
+    ];
+
+    const HOL_NAMES = {
+      "2026-01-01": "New Year",
+      "2026-04-03": "Good Friday",
+      "2026-04-06": "Easter Monday",
+      "2026-05-01": "Labour Day",
+      "2026-05-14": "Ascension Day",
+      "2026-05-25": "Whit Monday",
+      "2026-10-03": "German Unity Day",
+      "2026-10-31": "Reformation Day",
+      "2026-12-25": "Christmas Day",
+      "2026-12-26": "Boxing Day",
+      "2027-01-01": "New Year",
+      "2027-03-26": "Good Friday",
+      "2027-03-29": "Easter Monday",
+      "2027-05-01": "Labour Day",
+      "2027-05-06": "Ascension Day",
+      "2027-05-17": "Whit Monday",
+      "2027-10-03": "German Unity Day",
+      "2027-10-31": "Reformation Day",
+      "2027-12-25": "Christmas Day",
+      "2027-12-26": "Boxing Day",
+    };
+
+    function load(k) {
+      try { return localStorage.getItem(k); } catch (e) { return null; }
+    }
+    function save(k, v) {
+      try { localStorage.setItem(k, v); } catch (e) {}
+    }
+    let data = {};
+    try { data = JSON.parse(load(KEY) || "{}") || {}; } catch (e) { data = {}; }
+    if (!load(KEY + "-v3")) {
+      const migrated = {};
+      for (const [k, v] of Object.entries(data)) migrated[k] = v === "R" ? "W" : v;
+      data = migrated;
+      save(KEY, JSON.stringify(data));
+      save(KEY + "-v3", "1");
+    }
+    let view = Math.min(3, Math.max(0, Number(load(VIEW_KEY) ?? 1)));
+
+    function hoursFor(year, month, day, state) {
+      if (state === "W") {
+        const wd = new Date(year, month-1, day).getDay();
+        if (wd === 0) return H_SUN;
+        if (wd === 6) return H_SAT;
+        return H_WD;
+      }
+      if (state === "P") return H_POL;
+      if (state === "D") return H_D;
+      return 0;
+    }
+    function key(y,m,d) { return `${y}-${m}-${d}`; }
+    function isCounted(year, month) {
+      return year > COUNT_FROM.year || (year === COUNT_FROM.year && month >= COUNT_FROM.month);
+    }
+    function monthSum(year, month) {
+      const last = new Date(year, month, 0).getDate();
+      let sum = 0, travelH = 0;
+      for (let d = 1; d <= last; d++) {
+        const st = dayState(year, month, d);
+        sum += hoursFor(year, month, d, st);
+        if (st === "V") travelH += H_V;
+      }
+      const counted = isCounted(year, month);
+      return {
+        sum: counted ? sum : 0,
+        travelH: counted ? travelH : 0,
+        delta: counted ? sum - PAVSAL : null,
+        counted,
+      };
+    }
+    function setView(i) {
+      view = (i + PERIODS.length) % PERIODS.length;
+      save(VIEW_KEY, String(view));
+      render();
+    }
+    function isoOf(y,m,d) {
+      return `${y}-${String(m).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+    }
+    function dayState(y,m,d) {
+      const k = key(y,m,d);
+      if (data[k]) return data[k];
+      return HOL_NAMES[isoOf(y,m,d)] ? "H" : "";
+    }
+    function cycle(y,m,d) {
+      const k = key(y,m,d);
+      const cur = dayState(y,m,d);
+      let next;
+      if (cur === "H") next = "W";
+      else next = STATES[(STATES.indexOf(cur) + 1) % STATES.length];
+      if (next) data[k] = next; else delete data[k];
+      save(KEY, JSON.stringify(data));
+      render();
+    }
+
+    function render() {
+      const p = PERIODS[view];
+      document.getElementById("periods").innerHTML = PERIODS.map((x, i) =>
+        `<button type="button" class="${i===view?"on":""}" data-i="${i}">${x.label}</button>`
+      ).join("");
+
+      let html = '<table><thead><tr class="head"><th class="card-h">Month · hours · +/−</th>';
+      for (let d=1; d<=31; d++) html += `<th>${d}</th>`;
+      html += "<th>+/−</th></tr></thead><tbody>";
+
+      let halfH = 0, halfD = 0, halfV = 0;
+      for (let m = p.from; m <= p.to; m++) {
+        const last = new Date(p.year, m, 0).getDate();
+        const { sum, travelH, delta, counted } = monthSum(p.year, m);
+        if (counted) { halfH += sum; halfD += delta; halfV += travelH; }
+        let days = "", wds = "";
+        for (let d=1; d<=31; d++) {
+          if (d > last) {
+            days += `<td class="day invalid"></td>`;
+            wds += `<td class="wd"></td>`;
+            continue;
+          }
+          const dt = new Date(p.year, m-1, d);
+          const wd = (dt.getDay()+6)%7;
+          const iso = isoOf(p.year, m, d);
+          const st = dayState(p.year, m, d);
+          const wk = wd >= 5 ? " weekend" : "";
+          const holName = HOL_NAMES[iso] || "";
+          const hol = holName ? " holiday" : "";
+          const label = st === "P" ? "½" : (st || d);
+          days += `<td class="day ${st}${wk}" title="${holName}" data-y="${p.year}" data-m="${m}" data-d="${d}">${label}</td>`;
+          wds += `<td class="wd${wk}${hol}">${WD[wd]}${hol ? "·" : ""}</td>`;
+        }
+        const cls = !counted ? "zero" : delta > 0 ? "pos" : delta < 0 ? "neg" : "zero";
+        const deltaTxt = !counted ? "not counted" : delta > 0 ? `+${delta} plus` : delta < 0 ? `${delta} minus` : "0 — on quota";
+        html += `<tr>
+          <td class="month-card" rowspan="2">
+            <div class="m-name">${MONTHS[m-1]}</div>
+            <div class="m-hours">${counted ? `${sum.toFixed(0)} <span>hours worked</span>` : `<span>before August 2026</span>`}</div>
+            <div class="m-delta ${cls}">${deltaTxt}</div>
+            ${counted ? `<div class="m-travel">${travelH}h travel <span>paid separately</span></div>` : ""}
+          </td>
+          ${days}
+          <td class="end-sum ${cls}" rowspan="2">${counted ? `${sum.toFixed(0)} h<br>${delta>0?"+":""}${delta.toFixed(0)}` : "—"}</td>
+        </tr><tr>${wds}</tr>`;
+      }
+      html += `<tr class="total"><td>Total ${p.label}: ${halfH.toFixed(0)} h worked · ${halfD>0?"+":""}${halfD.toFixed(0)} · ${halfV}h travel</td><td colspan="31"></td><td>${halfD>0?"+":""}${halfD.toFixed(0)}</td></tr>`;
+      html += "</tbody></table>";
+      document.getElementById("app").innerHTML = html;
+
+      let phone = "";
+      for (let m = p.from; m <= p.to; m++) {
+        const last = new Date(p.year, m, 0).getDate();
+        const { sum, travelH, delta, counted } = monthSum(p.year, m);
+        const cls = !counted ? "zero" : delta > 0 ? "pos" : delta < 0 ? "neg" : "zero";
+        const deltaTxt = !counted ? "not counted" : delta > 0 ? `+${delta} plus` : delta < 0 ? `${delta} minus` : "0 — on quota";
+        const startWd = (new Date(p.year, m-1, 1).getDay() + 6) % 7;
+        phone += `<section class="phone-month"><div class="phone-head">
+          <div class="m-name">${MONTHS[m-1]} ${p.year}</div>
+          <div class="m-hours">${counted ? `${sum.toFixed(0)} <span>hours worked</span>` : `<span>before August 2026</span>`}</div>
+          <div class="m-delta ${cls}">${deltaTxt}</div>
+          ${counted ? `<div class="m-travel">${travelH}h travel <span>paid separately</span></div>` : ""}
+        </div><div class="phone-grid">`;
+        WD.forEach(w => { phone += `<div class="wd${w==="Sa"||w==="Su"?" weekend":""}">${w}</div>`; });
+        for (let i = 0; i < startWd; i++) phone += `<div class="day empty"></div>`;
+        for (let d = 1; d <= last; d++) {
+          const dt = new Date(p.year, m-1, d);
+          const wd = (dt.getDay()+6)%7;
+          const iso = isoOf(p.year, m, d);
+          const st = dayState(p.year, m, d);
+          const wk = wd >= 5 ? " weekend" : "";
+          const label = st === "P" ? "½" : (st || d);
+          phone += `<div class="day ${st}${wk}" title="${HOL_NAMES[iso]||""}" data-y="${p.year}" data-m="${m}" data-d="${d}">${label}</div>`;
+        }
+        phone += `</div></section>`;
+      }
+      document.getElementById("appPhone").innerHTML = phone;
+
+      let y26 = 0, y27 = 0, t26 = 0, t27 = 0, q26 = 0;
+      for (let m=1; m<=12; m++) {
+        const a = monthSum(2026, m), b = monthSum(2027, m);
+        y26 += a.sum; t26 += a.travelH; if (a.counted) q26 += PAVSAL;
+        y27 += b.sum; t27 += b.travelH;
+      }
+      document.getElementById("summary").innerHTML =
+        `From Aug 2026: <b>${y26}</b> h worked (${y26-q26>=0?"+":""}${y26-q26} vs ${q26}h quota), <b>${t26}h</b> travel · ` +
+        `2027: <b>${y27}</b> h worked (${y27-PAVSAL*12>=0?"+":""}${y27-PAVSAL*12} vs quota), <b>${t27}h</b> travel`;
+
+      document.querySelectorAll("#periods button").forEach(el => {
+        el.addEventListener("click", () => setView(+el.dataset.i));
+      });
+      document.querySelectorAll(".day[data-y]").forEach(el => {
+        el.addEventListener("click", () => cycle(+el.dataset.y, +el.dataset.m, +el.dataset.d));
+      });
+      const note = document.getElementById("openSafari");
+      if (note) note.hidden = true;
+    }
+
+    function backupText() {
+      return JSON.stringify(data, null, 2);
+    }
+    function say(msg) {
+      const el = document.getElementById("syncMsg");
+      el.hidden = false;
+      el.textContent = msg;
+    }
+    function applyHours(raw) {
+      const next = JSON.parse(String(raw));
+      if (!next || typeof next !== "object" || Array.isArray(next)) throw new Error("bad");
+      data = next;
+      save(KEY, JSON.stringify(data));
+      render();
+      say("Hours updated on this device.");
+    }
+    async function copyHours() {
+      const text = backupText();
+      document.getElementById("syncBox").value = text;
+      try {
+        await navigator.clipboard.writeText(text);
+        say("Copied. On the other device: Paste hours, then Apply pasted hours.");
+      } catch (e) {
+        document.getElementById("syncBox").select();
+        say("Select the text below and copy it, then paste on the other device.");
+      }
+    }
+
+    document.getElementById("prev").addEventListener("click", () => setView(view - 1));
+    document.getElementById("next").addEventListener("click", () => setView(view + 1));
+    document.getElementById("copyBtn").addEventListener("click", () => { copyHours(); });
+    document.getElementById("shareBtn").addEventListener("click", async () => {
+      const text = backupText();
+      document.getElementById("syncBox").value = text;
+      const file = new File([text], "hours-backup.txt", { type: "text/plain" });
+      try {
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], title: "Hours backup" });
+          say("Shared. On the other device open the text and Apply pasted hours.");
+          return;
+        }
+        if (navigator.share) {
+          await navigator.share({ text, title: "Hours backup" });
+          say("Shared. On the other device: Paste hours, then Apply pasted hours.");
+          return;
+        }
+      } catch (e) {
+        if (e && e.name === "AbortError") return;
+      }
+      copyHours();
+    });
+    document.getElementById("pasteBtn").addEventListener("click", async () => {
+      try {
+        const text = await navigator.clipboard.readText();
+        document.getElementById("syncBox").value = text;
+        applyHours(text);
+      } catch (e) {
+        say("Paste into the box below, then tap Apply pasted hours.");
+        document.getElementById("syncBox").focus();
+      }
+    });
+    document.getElementById("applyBtn").addEventListener("click", () => {
+      try {
+        applyHours(document.getElementById("syncBox").value);
+      } catch (e) {
+        say("That text is not a hours backup. Copy hours on the other device first.");
+      }
+    });
+    document.getElementById("importFile").addEventListener("change", ev => {
+      const file = ev.target.files && ev.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          applyHours(reader.result);
+        } catch (e) {
+          say("Could not read that file. Use Copy / Paste instead.");
+        }
+      };
+      reader.readAsText(file);
+      ev.target.value = "";
+    });
+    render();
+  </script>
+</body>
+</html>
