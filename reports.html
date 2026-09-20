@@ -89,6 +89,21 @@
     .day .n { font-size: 14px; }
     .day .st { font-size: 11px; }
     .day.empty { background: transparent; border: 0; cursor: default; }
+    .thumbs {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 10px 0 0;
+    }
+    .thumbs .p { position: relative; aspect-ratio: 1; }
+    .thumbs img { width: 100%; height: 100%; object-fit: cover; border-radius: 8px; background: #eee; }
+    .thumbs .x {
+      position: absolute; top: 4px; right: 4px; width: 28px; height: 28px;
+      border: 0; border-radius: 50%; background: #fff; color: var(--navy);
+      font-weight: 800; cursor: pointer;
+    }
+    .add-photo {
+      display: block; margin-top: 10px; text-align: center;
+      border: 1px dashed #d6d3d1; border-radius: 8px; padding: 12px;
+      font-weight: 700; color: var(--navy); cursor: pointer;
+    }
     .summary { padding: 0 12px 16px; color: var(--muted); font-size: 15px; }
     .summary b { color: var(--navy); }
     .tools { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 12px 8px; }
@@ -110,6 +125,7 @@
       background: #fff; border-top: 2px solid var(--navy);
       padding: 14px 14px calc(16px + env(safe-area-inset-bottom));
       box-shadow: 0 -8px 24px rgba(0,0,0,.12);
+      max-height: 92vh; overflow: auto;
     }
     .editor[hidden] { display: none; }
     .editor h2 { margin: 0 0 8px; font-size: 18px; color: var(--navy); }
@@ -145,7 +161,7 @@
 <body>
   <header>
     <h1>Daily reports</h1>
-    <p>Tap a day and write what you worked on. Green squares already have a report.</p>
+    <p>Tap a day, write what you worked on, and add photos. Green squares already have a report or photos.</p>
     <nav class="switch">
       <a href="index.html">Hours</a>
       <a class="on" href="reports.html">Daily reports</a>
@@ -154,6 +170,7 @@
   <div class="bar">
     <div class="chip"><span class="sq">12</span> Day with a report</div>
     <div class="chip">Empty square = nothing written yet</div>
+    <div class="chip">Photos stay on this phone</div>
   </div>
   <div class="periods" id="periods"></div>
   <div class="phone" id="appPhone"></div>
@@ -171,6 +188,8 @@
   <div class="editor" id="editor" hidden>
     <h2 id="edTitle">Report</h2>
     <textarea id="edText" placeholder="What did you work on this day?"></textarea>
+    <label class="add-photo">Add photos<input type="file" id="edFiles" accept="image/*" multiple hidden /></label>
+    <div class="thumbs" id="edPhotos"></div>
     <div class="row">
       <button type="button" id="edSave">Save report</button>
       <button type="button" id="edClear">Clear</button>
@@ -199,22 +218,116 @@
     try { data = JSON.parse(load(KEY) || "{}") || {}; } catch (e) { data = {}; }
     let view = Math.min(3, Math.max(0, Number(load(VIEW_KEY) ?? 1)));
     let openKey = null;
+    let openUrls = [];
+    let photoDays = new Set();
+
+    const DB_NAME = "koledar-porocila-photos";
+    function openDb() {
+      return new Promise((resolve, reject) => {
+        const req = indexedDB.open(DB_NAME, 1);
+        req.onupgradeneeded = () => req.result.createObjectStore("photos");
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    }
+    async function getPhotos(dayKey) {
+      try {
+        const db = await openDb();
+        return await new Promise((resolve, reject) => {
+          const r = db.transaction("photos").objectStore("photos").get(dayKey);
+          r.onsuccess = () => resolve(Array.isArray(r.result) ? r.result : []);
+          r.onerror = () => reject(r.error);
+        });
+      } catch (e) { return []; }
+    }
+    async function setPhotos(dayKey, blobs) {
+      const db = await openDb();
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction("photos", "readwrite");
+        if (blobs.length) tx.objectStore("photos").put(blobs, dayKey);
+        else tx.objectStore("photos").delete(dayKey);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+      if (blobs.length) photoDays.add(dayKey); else photoDays.delete(dayKey);
+    }
+    async function loadPhotoDays() {
+      photoDays = new Set();
+      try {
+        const db = await openDb();
+        await new Promise((resolve, reject) => {
+          const r = db.transaction("photos").objectStore("photos").openCursor();
+          r.onsuccess = () => {
+            const c = r.result;
+            if (!c) { resolve(); return; }
+            if (Array.isArray(c.value) && c.value.length) photoDays.add(c.key);
+            c.continue();
+          };
+          r.onerror = () => reject(r.error);
+        });
+      } catch (e) {}
+    }
+    function compressImage(file) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        const url = URL.createObjectURL(file);
+        img.onload = () => {
+          const max = 1400;
+          const scale = Math.min(1, max / Math.max(img.width, img.height));
+          const c = document.createElement("canvas");
+          c.width = Math.max(1, Math.round(img.width * scale));
+          c.height = Math.max(1, Math.round(img.height * scale));
+          c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+          c.toBlob(b => {
+            URL.revokeObjectURL(url);
+            if (b) resolve(b); else reject(new Error("compress"));
+          }, "image/jpeg", 0.72);
+        };
+        img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("image")); };
+        img.src = url;
+      });
+    }
 
     function key(y, m, d) { return `${y}-${m}-${d}`; }
     function noteOf(y, m, d) {
       const t = data[key(y, m, d)];
       return typeof t === "string" ? t : "";
     }
+    function dayHas(y, m, d) {
+      return !!noteOf(y, m, d).trim() || photoDays.has(key(y, m, d));
+    }
     function countMonth(year, month) {
       const last = new Date(year, month, 0).getDate();
       let n = 0;
-      for (let d = 1; d <= last; d++) if (noteOf(year, month, d).trim()) n++;
+      for (let d = 1; d <= last; d++) if (dayHas(year, month, d)) n++;
       return n;
     }
     function setView(i) {
       view = (i + PERIODS.length) % PERIODS.length;
       save(VIEW_KEY, String(view));
       render();
+    }
+    function revokeOpen() {
+      openUrls.forEach(u => URL.revokeObjectURL(u));
+      openUrls = [];
+    }
+    async function showPhotos(dayKey) {
+      revokeOpen();
+      const box = document.getElementById("edPhotos");
+      const blobs = await getPhotos(dayKey);
+      box.innerHTML = blobs.map((b, i) => {
+        const u = URL.createObjectURL(b);
+        openUrls.push(u);
+        return `<div class="p"><img src="${u}" alt=""><button type="button" class="x" data-i="${i}" aria-label="Remove photo">×</button></div>`;
+      }).join("");
+      box.querySelectorAll(".x").forEach(btn => {
+        btn.addEventListener("click", async () => {
+          const next = blobs.filter((_, j) => j !== +btn.dataset.i);
+          await setPhotos(dayKey, next);
+          showPhotos(dayKey);
+          render();
+        });
+      });
     }
     function openDay(y, m, d) {
       openKey = key(y, m, d);
@@ -223,10 +336,12 @@
         `${WD[(dt.getDay() + 6) % 7]} ${d} ${MONTHS[m - 1]} ${y}`;
       document.getElementById("edText").value = noteOf(y, m, d);
       document.getElementById("editor").hidden = false;
+      showPhotos(openKey);
       document.getElementById("edText").focus();
     }
     function closeEditor() {
       document.getElementById("editor").hidden = true;
+      revokeOpen();
       openKey = null;
     }
     function saveOpen() {
@@ -260,9 +375,13 @@
         for (let i = 0; i < startWd; i++) phone += `<div class="day empty"></div>`;
         for (let d = 1; d <= last; d++) {
           const wd = (new Date(p.year, m - 1, d).getDay() + 6) % 7;
-          const has = !!noteOf(p.year, m, d).trim();
+          const k = key(p.year, m, d);
+          const note = !!noteOf(p.year, m, d).trim();
+          const pic = photoDays.has(k);
+          const has = note || pic;
+          const mark = note && pic ? "note+" : pic ? "photo" : note ? "note" : "";
           const wk = wd >= 5 ? " weekend" : "";
-          phone += `<div class="day${has?" has":""}${wk}" data-y="${p.year}" data-m="${m}" data-d="${d}"><span class="n">${d}</span>${has ? `<span class="st">note</span>` : ""}</div>`;
+          phone += `<div class="day${has?" has":""}${wk}" data-y="${p.year}" data-m="${m}" data-d="${d}"><span class="n">${d}</span>${mark ? `<span class="st">${mark}</span>` : ""}</div>`;
         }
         phone += `</div></section>`;
       }
@@ -343,7 +462,21 @@
       saveOpen();
     });
     document.getElementById("edClose").addEventListener("click", closeEditor);
-    render();
+    document.getElementById("edFiles").addEventListener("change", async ev => {
+      const files = [...(ev.target.files || [])];
+      ev.target.value = "";
+      if (!openKey || !files.length) return;
+      const have = await getPhotos(openKey);
+      for (const file of files) {
+        if (have.length >= 8) { say("Maximum 8 photos per day."); break; }
+        try { have.push(await compressImage(file)); }
+        catch (e) { say("Could not add that photo."); }
+      }
+      await setPhotos(openKey, have);
+      showPhotos(openKey);
+      render();
+    });
+    loadPhotoDays().then(render);
   </script>
 </body>
 </html>
