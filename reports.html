@@ -161,7 +161,7 @@
 <body>
   <header>
     <h1>Daily reports</h1>
-    <p>Tap a day, write what you worked on, and add photos. Green squares already have a report or photos.</p>
+    <p>Tap a day, write what you worked on, and add photos. Text saves as you type and when you close.</p>
     <nav class="switch">
       <a href="index.html">Hours</a>
       <a class="on" href="reports.html">Daily reports</a>
@@ -339,19 +339,29 @@
       showPhotos(openKey);
       document.getElementById("edText").focus();
     }
+    function persistText() {
+      if (!openKey) return false;
+      const raw = document.getElementById("edText").value;
+      if (raw.trim()) data[openKey] = raw;
+      else delete data[openKey];
+      try {
+        localStorage.setItem(KEY, JSON.stringify(data));
+        return true;
+      } catch (e) {
+        say("Could not save the report. Storage may be full.");
+        return false;
+      }
+    }
     function closeEditor() {
+      persistText();
       document.getElementById("editor").hidden = true;
       revokeOpen();
       openKey = null;
+      render();
     }
     function saveOpen() {
-      if (!openKey) return;
-      const text = document.getElementById("edText").value.trim();
-      if (text) data[openKey] = document.getElementById("edText").value;
-      else delete data[openKey];
-      save(KEY, JSON.stringify(data));
+      persistText();
       closeEditor();
-      render();
     }
 
     function render() {
@@ -456,10 +466,18 @@
       try { applyReports(document.getElementById("syncBox").value); }
       catch (e) { say("That text is not a reports backup."); }
     });
+    let saveTimer = 0;
+    document.getElementById("edText").addEventListener("input", () => {
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(persistText, 250);
+    });
+    document.addEventListener("visibilitychange", () => { if (document.hidden) persistText(); });
+    window.addEventListener("pagehide", persistText);
     document.getElementById("edSave").addEventListener("click", saveOpen);
     document.getElementById("edClear").addEventListener("click", () => {
       document.getElementById("edText").value = "";
-      saveOpen();
+      persistText();
+      closeEditor();
     });
     document.getElementById("edClose").addEventListener("click", closeEditor);
     document.getElementById("edFiles").addEventListener("change", async ev => {
