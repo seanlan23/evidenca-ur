@@ -43,6 +43,12 @@
     }
     header h1 { margin: 0 0 4px; font-size: 24px; font-weight: 700; }
     header p { margin: 0; opacity: .85; font-size: 15px; }
+    .switch { display: flex; gap: 8px; margin-top: 10px; }
+    .switch a {
+      color: #fff; text-decoration: none; font-weight: 700; font-size: 13px;
+      padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,.35);
+    }
+    .switch a.on { background: #fff; color: var(--navy); }
     .bar {
       display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
       padding: 12px 20px; background: #fff; border-bottom: 1px solid #e7e5e4;
@@ -197,6 +203,10 @@
   <header>
     <h1>Field rotation calendar</h1>
     <p>Hours count from August 2026. Click: work → half day → home → travel → leave → empty.</p>
+    <nav class="switch">
+      <a class="on" href="index.html">Hours</a>
+      <a href="reports.html">Daily reports</a>
+    </nav>
   </header>
   <div class="bar">
     <div class="chip"><span class="sq w">W</span> Work · 6:30–17:00 · 10h / Sat 6h</div>
