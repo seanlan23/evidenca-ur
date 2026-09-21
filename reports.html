@@ -107,12 +107,14 @@
     .summary { padding: 0 12px 16px; color: var(--muted); font-size: 15px; }
     .summary b { color: var(--navy); }
     .tools { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 12px 8px; }
-    .tools button, .tools label {
+    .tools button, .tools label, .tools a {
       border: 1px solid #d6d3d1; background: #fff; color: var(--navy);
       padding: 10px 14px; border-radius: 8px; min-height: 44px; flex: 1 1 40%;
       font: 600 14px/1.3 -apple-system, BlinkMacSystemFont, sans-serif;
-      cursor: pointer; text-align: center;
+      cursor: pointer; text-align: center; text-decoration: none;
     }
+    .tools a { background: var(--note); color: #fff; border-color: var(--note); display: grid; place-items: center; }
+    .tools a[hidden] { display: none !important; }
     .sync-box {
       display: block; width: calc(100% - 24px); margin: 0 12px 8px;
       min-height: 88px; padding: 10px 12px; border: 1px solid #d6d3d1;
@@ -190,6 +192,7 @@
   <p class="summary" id="summary"></p>
   <div class="tools">
     <button type="button" id="pdfBtn">Export PDF</button>
+    <a id="pdfLink" hidden>Tap to save PDF</a>
     <button type="button" id="copyBtn">Copy reports</button>
     <button type="button" id="shareBtn">Share reports</button>
     <button type="button" id="pasteBtn">Paste reports</button>
@@ -211,7 +214,7 @@
       <button type="button" id="edClose">Close</button>
     </div>
   </div>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
   <script>
     const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
     const WD = ["Mo","Tu","We","Th","Fr","Sa","Su"];
@@ -455,6 +458,29 @@
       }
     }
 
+    function loadScript(src) {
+      return new Promise((resolve, reject) => {
+        const s = document.createElement("script");
+        s.src = src;
+        s.onload = () => resolve();
+        s.onerror = () => reject(new Error(src));
+        document.head.appendChild(s);
+      });
+    }
+    async function ensureJsPdf() {
+      if (window.jspdf && window.jspdf.jsPDF) return true;
+      const urls = [
+        "https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js",
+        "https://unpkg.com/jspdf@2.5.2/dist/jspdf.umd.min.js",
+      ];
+      for (const u of urls) {
+        try {
+          await loadScript(u);
+          if (window.jspdf && window.jspdf.jsPDF) return true;
+        } catch (e) {}
+      }
+      return false;
+    }
     function blobToDataUrl(blob) {
       return new Promise((resolve, reject) => {
         const r = new FileReader();
@@ -465,8 +491,9 @@
     }
     async function exportPdf() {
       persistText();
-      if (!window.jspdf || !window.jspdf.jsPDF) {
-        say("Could not load PDF tool. Check the internet connection and refresh.");
+      say("Preparing PDF…");
+      if (!(await ensureJsPdf())) {
+        say("Could not load PDF tool. Check the internet and try again.");
         return;
       }
       const keys = [...new Set([...Object.keys(data), ...photoDays])]
@@ -532,26 +559,26 @@
         y += 4;
       }
       const blob = doc.output("blob");
+      const url = URL.createObjectURL(blob);
+      const link = document.getElementById("pdfLink");
+      link.href = url;
+      link.download = "daily-work-reports.pdf";
+      link.hidden = false;
       const file = new File([blob], "daily-work-reports.pdf", { type: "application/pdf" });
       try {
         if (navigator.canShare && navigator.canShare({ files: [file] })) {
           await navigator.share({ files: [file], title: "Daily work reports" });
-          say("Save the PDF to Files, or send it.");
+          say("Save the PDF to Files, or send it. Or tap Save PDF below.");
           return;
         }
       } catch (e) {
         if (e && e.name === "AbortError") return;
       }
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "daily-work-reports.pdf";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      say("PDF saved. On iPhone use Share → Save to Files if it opened instead.");
+      say("Tap Save PDF below, then Share → Save to Files.");
     }
-    document.getElementById("pdfBtn").addEventListener("click", () => { exportPdf(); });
+    document.getElementById("pdfBtn").addEventListener("click", () => {
+      exportPdf().catch(err => say("PDF failed. " + (err && err.message ? err.message : "Try again.")));
+    });
     document.getElementById("copyBtn").addEventListener("click", () => { copyReports(); });
     document.getElementById("shareBtn").addEventListener("click", async () => {
       const text = backupText();
