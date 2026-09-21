@@ -156,6 +156,19 @@
       .summary { padding: 0 20px 16px; }
       .editor { left: 20%; right: 20%; bottom: 24px; border: 2px solid var(--navy); border-radius: 14px; }
     }
+    #printout { display: none; }
+    @media print {
+      body { background: #fff; }
+      body > *:not(#printout) { display: none !important; }
+      #printout { display: block !important; padding: 0; color: #111; }
+      .print-h { font-size: 20px; margin: 0 0 4px; }
+      .print-sub { color: #444; margin: 0 0 16px; font-size: 12px; }
+      .print-day { break-inside: avoid; page-break-inside: avoid; margin: 0 0 16px; padding-bottom: 12px; border-bottom: 1px solid #ddd; }
+      .print-day h3 { margin: 0 0 6px; font-size: 14px; }
+      .print-day p { margin: 0; white-space: pre-wrap; font-size: 12px; line-height: 1.4; }
+      .print-photos { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+      .print-photos img { width: 48%; max-height: 220px; object-fit: contain; }
+    }
   </style>
 </head>
 <body>
@@ -176,6 +189,7 @@
   <div class="phone" id="appPhone"></div>
   <p class="summary" id="summary"></p>
   <div class="tools">
+    <button type="button" id="pdfBtn">Export PDF</button>
     <button type="button" id="copyBtn">Copy reports</button>
     <button type="button" id="shareBtn">Share reports</button>
     <button type="button" id="pasteBtn">Paste reports</button>
@@ -185,6 +199,7 @@
     <button type="button" id="applyBtn">Apply pasted reports</button>
   </div>
   <p class="sync-msg" id="syncMsg" hidden></p>
+  <div id="printout"></div>
   <div class="editor" id="editor" hidden>
     <h2 id="edTitle">Report</h2>
     <textarea id="edText" placeholder="What did you work on this day?"></textarea>
@@ -439,6 +454,46 @@
       }
     }
 
+    async function exportPdf() {
+      persistText();
+      const keys = [...new Set([...Object.keys(data), ...photoDays])]
+        .filter(k => (typeof data[k] === "string" && data[k].trim()) || photoDays.has(k))
+        .sort((a, b) => {
+          const [y1, m1, d1] = a.split("-").map(Number);
+          const [y2, m2, d2] = b.split("-").map(Number);
+          return y1 - y2 || m1 - m2 || d1 - d2;
+        });
+      if (!keys.length) {
+        say("Nothing to export yet.");
+        return;
+      }
+      const urls = [];
+      let html = `<h1 class="print-h">Daily work reports</h1><p class="print-sub">Exported ${new Date().toLocaleDateString("en-GB")}</p>`;
+      for (const k of keys) {
+        const [y, m, d] = k.split("-").map(Number);
+        const dt = new Date(y, m - 1, d);
+        const title = `${WD[(dt.getDay() + 6) % 7]} ${d} ${MONTHS[m - 1]} ${y}`;
+        const text = (data[k] || "").trim();
+        const blobs = await getPhotos(k);
+        const imgs = blobs.map(b => {
+          const u = URL.createObjectURL(b);
+          urls.push(u);
+          return `<img src="${u}" alt="">`;
+        }).join("");
+        html += `<section class="print-day"><h3>${title}</h3>${text ? `<p>${text.replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]))}</p>` : ""}${imgs ? `<div class="print-photos">${imgs}</div>` : ""}</section>`;
+      }
+      const box = document.getElementById("printout");
+      box.innerHTML = html;
+      const imgs = [...box.querySelectorAll("img")];
+      await Promise.all(imgs.map(img => img.complete ? Promise.resolve() : new Promise(r => { img.onload = img.onerror = r; })));
+      say("In the print screen choose Save as PDF.");
+      window.print();
+      setTimeout(() => {
+        urls.forEach(u => URL.revokeObjectURL(u));
+        box.innerHTML = "";
+      }, 2000);
+    }
+    document.getElementById("pdfBtn").addEventListener("click", () => { exportPdf(); });
     document.getElementById("copyBtn").addEventListener("click", () => { copyReports(); });
     document.getElementById("shareBtn").addEventListener("click", async () => {
       const text = backupText();
