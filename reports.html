@@ -211,6 +211,7 @@
       <button type="button" id="edClose">Close</button>
     </div>
   </div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js"></script>
   <script>
     const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
     const WD = ["Mo","Tu","We","Th","Fr","Sa","Su"];
@@ -454,8 +455,20 @@
       }
     }
 
+    function blobToDataUrl(blob) {
+      return new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(r.result);
+        r.onerror = reject;
+        r.readAsDataURL(blob);
+      });
+    }
     async function exportPdf() {
       persistText();
+      if (!window.jspdf || !window.jspdf.jsPDF) {
+        say("Could not load PDF tool. Check the internet connection and refresh.");
+        return;
+      }
       const keys = [...new Set([...Object.keys(data), ...photoDays])]
         .filter(k => (typeof data[k] === "string" && data[k].trim()) || photoDays.has(k))
         .sort((a, b) => {
@@ -467,31 +480,76 @@
         say("Nothing to export yet.");
         return;
       }
-      const urls = [];
-      let html = `<h1 class="print-h">Daily work reports</h1><p class="print-sub">Exported ${new Date().toLocaleDateString("en-GB")}</p>`;
+      const doc = new window.jspdf.jsPDF({ unit: "mm", format: "a4" });
+      const margin = 14;
+      const maxW = 210 - margin * 2;
+      let y = 16;
+      const nextPage = (need) => {
+        if (y + need > 285) { doc.addPage(); y = 16; }
+      };
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(16);
+      doc.text("Daily work reports", margin, y);
+      y += 7;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      doc.text(`Exported ${new Date().toLocaleDateString("en-GB")}`, margin, y);
+      y += 10;
       for (const k of keys) {
-        const [y, m, d] = k.split("-").map(Number);
-        const dt = new Date(y, m - 1, d);
-        const title = `${WD[(dt.getDay() + 6) % 7]} ${d} ${MONTHS[m - 1]} ${y}`;
+        const [yy, m, d] = k.split("-").map(Number);
+        const dt = new Date(yy, m - 1, d);
+        const title = `${WD[(dt.getDay() + 6) % 7]} ${d} ${MONTHS[m - 1]} ${yy}`;
         const text = (data[k] || "").trim();
         const blobs = await getPhotos(k);
-        const imgs = blobs.map(b => {
-          const u = URL.createObjectURL(b);
-          urls.push(u);
-          return `<img src="${u}" alt="">`;
-        }).join("");
-        html += `<section class="print-day"><h3>${title}</h3>${text ? `<p>${text.replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]))}</p>` : ""}${imgs ? `<div class="print-photos">${imgs}</div>` : ""}</section>`;
+        nextPage(16);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(12);
+        doc.text(title, margin, y);
+        y += 6;
+        if (text) {
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(10);
+          const lines = doc.splitTextToSize(text, maxW);
+          for (const line of lines) {
+            nextPage(6);
+            doc.text(line, margin, y);
+            y += 5;
+          }
+          y += 2;
+        }
+        for (const blob of blobs) {
+          try {
+            const url = await blobToDataUrl(blob);
+            const props = doc.getImageProperties(url);
+            let w = maxW;
+            let h = w * props.height / props.width;
+            if (h > 90) { h = 90; w = h * props.width / props.height; }
+            nextPage(h + 6);
+            doc.addImage(url, "JPEG", margin, y, w, h);
+            y += h + 4;
+          } catch (e) {}
+        }
+        y += 4;
       }
-      const box = document.getElementById("printout");
-      box.innerHTML = html;
-      const imgs = [...box.querySelectorAll("img")];
-      await Promise.all(imgs.map(img => img.complete ? Promise.resolve() : new Promise(r => { img.onload = img.onerror = r; })));
-      say("In the print screen choose Save as PDF.");
-      window.print();
-      setTimeout(() => {
-        urls.forEach(u => URL.revokeObjectURL(u));
-        box.innerHTML = "";
-      }, 2000);
+      const blob = doc.output("blob");
+      const file = new File([blob], "daily-work-reports.pdf", { type: "application/pdf" });
+      try {
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], title: "Daily work reports" });
+          say("Save the PDF to Files, or send it.");
+          return;
+        }
+      } catch (e) {
+        if (e && e.name === "AbortError") return;
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "daily-work-reports.pdf";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      say("PDF saved. On iPhone use Share → Save to Files if it opened instead.");
     }
     document.getElementById("pdfBtn").addEventListener("click", () => { exportPdf(); });
     document.getElementById("copyBtn").addEventListener("click", () => { copyReports(); });
