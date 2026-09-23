@@ -576,56 +576,150 @@
       const fileLabel = [...months].length === 1
         ? `daily-work-reports-${[...months][0].replace("-", "-")}.pdf`
         : "daily-work-reports-selected.pdf";
+      const WEEK = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
+      const navy = [30, 58, 76];
+      const teal = [15, 118, 110];
+      const ink = [28, 25, 23];
+      const muted = [87, 83, 78];
+      const line = [231, 229, 228];
+      const cream = [247, 243, 236];
       const doc = new window.jspdf.jsPDF({ unit: "mm", format: "a4" });
-      const margin = 14;
+      const margin = 16;
       const maxW = 210 - margin * 2;
-      let y = 16;
+      const bottom = 280;
+      let y = 18;
       const nextPage = (need) => {
-        if (y + need > 285) { doc.addPage(); y = 16; }
+        if (y + need > bottom) { doc.addPage(); y = 18; }
       };
+      const rule = () => {
+        doc.setDrawColor(...line);
+        doc.setLineWidth(0.3);
+        doc.line(margin, y, margin + maxW, y);
+      };
+      const byMonth = new Map();
+      for (const k of keys) {
+        const [yy, m] = k.split("-").map(Number);
+        const mk = `${yy}-${m}`;
+        if (!byMonth.has(mk)) byMonth.set(mk, []);
+        byMonth.get(mk).push(k);
+      }
+
+      doc.setFillColor(...navy);
+      doc.rect(0, 0, 210, 32, "F");
+      doc.setTextColor(255, 255, 255);
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(16);
-      doc.text("Daily work reports", margin, y);
-      y += 7;
+      doc.setFontSize(18);
+      doc.text("Daily work reports", margin, 14);
       doc.setFont("helvetica", "normal");
       doc.setFontSize(10);
-      doc.text(`Exported ${new Date().toLocaleDateString("en-GB")} · ${monthNames}`, margin, y);
-      y += 10;
+      const headLines = doc.splitTextToSize(monthNames, maxW);
+      doc.text(headLines, margin, 21);
+      y = 40;
+      doc.setTextColor(...muted);
+      doc.setFontSize(9);
+      doc.text(`${keys.length} day${keys.length === 1 ? "" : "s"} · exported ${new Date().toLocaleDateString("en-GB")}`, margin, y);
+      y += 8;
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.setTextColor(...navy);
+      doc.text("Overview", margin, y);
+      y += 3;
+      rule();
+      y += 6;
+      doc.setFontSize(9);
+      for (const [mk, list] of byMonth) {
+        const [yy, m] = mk.split("-").map(Number);
+        nextPage(7);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(...ink);
+        doc.text(`${MONTHS[m - 1]} ${yy}`, margin, y);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(...muted);
+        doc.text(`${list.length} report${list.length === 1 ? "" : "s"}`, margin + maxW - 28, y);
+        y += 6;
+      }
+      y += 4;
+
+      let lastMonth = "";
       for (const k of keys) {
         const [yy, m, d] = k.split("-").map(Number);
         const dt = new Date(yy, m - 1, d);
-        const title = `${WD[(dt.getDay() + 6) % 7]} ${d} ${MONTHS[m - 1]} ${yy}`;
+        const monthLabel = `${MONTHS[m - 1]} ${yy}`;
+        const title = `${WEEK[(dt.getDay() + 6) % 7]}  ${d} ${MONTHS[m - 1]} ${yy}`;
         const text = (data[k] || "").trim();
         const blobs = await getPhotos(k);
-        nextPage(16);
+        if (monthLabel !== lastMonth) {
+          nextPage(20);
+          doc.setFillColor(...navy);
+          doc.rect(margin, y, maxW, 9, "F");
+          doc.setTextColor(255, 255, 255);
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(12);
+          doc.text(monthLabel.toUpperCase(), margin + 4, y + 6.2);
+          doc.setTextColor(...ink);
+          y += 14;
+          lastMonth = monthLabel;
+        }
+        nextPage(24);
+        doc.setFillColor(...cream);
+        doc.rect(margin, y - 4, maxW, 10, "F");
+        doc.setFillColor(...teal);
+        doc.rect(margin, y - 4, 2.2, 10, "F");
         doc.setFont("helvetica", "bold");
-        doc.setFontSize(12);
-        doc.text(title, margin, y);
-        y += 6;
+        doc.setFontSize(11);
+        doc.setTextColor(...navy);
+        doc.text(title, margin + 6, y + 3);
+        y += 10;
         if (text) {
           doc.setFont("helvetica", "normal");
           doc.setFontSize(10);
-          const lines = doc.splitTextToSize(text, maxW);
+          doc.setTextColor(...ink);
+          const lines = doc.splitTextToSize(text, maxW - 4);
           for (const line of lines) {
             nextPage(6);
-            doc.text(line, margin, y);
+            doc.text(line, margin + 2, y);
             y += 5;
           }
           y += 2;
         }
-        for (const blob of blobs) {
-          try {
-            const url = await blobToDataUrl(blob);
-            const props = doc.getImageProperties(url);
-            let w = maxW;
-            let h = w * props.height / props.width;
-            if (h > 90) { h = 90; w = h * props.width / props.height; }
-            nextPage(h + 6);
-            doc.addImage(url, "JPEG", margin, y, w, h);
-            y += h + 4;
-          } catch (e) {}
+        if (blobs.length) {
+          const gap = 3;
+          const colW = (maxW - gap) / 2;
+          for (let i = 0; i < blobs.length; i += 2) {
+            const pair = blobs.slice(i, i + 2);
+            const prepared = [];
+            for (const blob of pair) {
+              try {
+                const url = await blobToDataUrl(blob);
+                const props = doc.getImageProperties(url);
+                let w = colW;
+                let h = w * props.height / props.width;
+                if (h > 52) { h = 52; w = h * props.width / props.height; }
+                prepared.push({ url, w, h });
+              } catch (e) {}
+            }
+            const rowH = prepared.reduce((h, p) => Math.max(h, p.h), 0);
+            nextPage(rowH + 6);
+            prepared.forEach((p, idx) => {
+              doc.addImage(p.url, "JPEG", margin + idx * (colW + gap), y, p.w, p.h);
+            });
+            y += rowH + 4;
+          }
         }
-        y += 4;
+        y += 3;
+        nextPage(4);
+        rule();
+        y += 7;
+      }
+      const pages = doc.getNumberOfPages();
+      for (let i = 1; i <= pages; i++) {
+        doc.setPage(i);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(8);
+        doc.setTextColor(...muted);
+        doc.text("Daily work reports", margin, 290);
+        doc.text(`${i} / ${pages}`, 210 - margin, 290, { align: "right" });
       }
       const blob = doc.output("blob");
       const url = URL.createObjectURL(blob);
