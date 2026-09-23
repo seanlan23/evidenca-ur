@@ -115,6 +115,27 @@
     }
     .tools a { background: var(--note); color: #fff; border-color: var(--note); display: grid; place-items: center; }
     .tools a[hidden] { display: none !important; }
+    .export-box {
+      margin: 0 12px 16px; padding: 12px; background: #fff; border-radius: 14px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.06);
+    }
+    .export-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+    .export-head b { flex: 1; color: var(--navy); }
+    .export-head button {
+      border: 1px solid #d6d3d1; background: #fff; color: var(--navy);
+      padding: 8px 12px; border-radius: 8px; min-height: 40px; font-weight: 700; cursor: pointer;
+    }
+    .month-picks {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px;
+    }
+    .month-picks label {
+      display: flex; align-items: center; gap: 8px; min-height: 44px;
+      padding: 6px 8px; border: 1px solid #e7e5e4; border-radius: 8px; font-size: 13px; font-weight: 600;
+    }
+    .month-picks input { width: 18px; height: 18px; }
+    @media (min-width: 821px) and (hover: hover) and (pointer: fine) {
+      .export-box { margin: 0 20px 16px; }
+    }
     .sync-box {
       display: block; width: calc(100% - 24px); margin: 0 12px 8px;
       min-height: 88px; padding: 10px 12px; border: 1px solid #d6d3d1;
@@ -190,9 +211,19 @@
   <div class="periods" id="periods"></div>
   <div class="phone" id="appPhone"></div>
   <p class="summary" id="summary"></p>
+  <div class="export-box">
+    <div class="export-head">
+      <b>Export PDF</b>
+      <button type="button" id="pdfAll">All</button>
+      <button type="button" id="pdfNone">None</button>
+    </div>
+    <div class="month-picks" id="monthPicks"></div>
+    <div class="tools" style="padding:0">
+      <button type="button" id="pdfBtn">Export selected months</button>
+      <a id="pdfLink" hidden>Tap to save PDF</a>
+    </div>
+  </div>
   <div class="tools">
-    <button type="button" id="pdfBtn">Export PDF</button>
-    <a id="pdfLink" hidden>Tap to save PDF</a>
     <button type="button" id="copyBtn">Copy reports</button>
     <button type="button" id="shareBtn">Share reports</button>
     <button type="button" id="pasteBtn">Paste reports</button>
@@ -423,6 +454,7 @@
       }
       document.getElementById("summary").innerHTML =
         `This period: <b>${half}</b> reports · 2026: <b>${y26}</b> · 2027: <b>${y27}</b>`;
+      fillMonthPicks();
 
       document.querySelectorAll("#periods button").forEach(el => {
         el.addEventListener("click", () => setView(+el.dataset.i));
@@ -481,6 +513,27 @@
       }
       return false;
     }
+    function fillMonthPicks() {
+      const box = document.getElementById("monthPicks");
+      const prev = new Set([...document.querySelectorAll("#monthPicks input:checked")].map(el => el.value));
+      const hadPrev = document.querySelectorAll("#monthPicks input").length > 0;
+      const p = PERIODS[view];
+      let html = "";
+      for (const y of [2026, 2027]) {
+        for (let m = 1; m <= 12; m++) {
+          const n = countMonth(y, m);
+          if (!n) continue;
+          const val = `${y}-${m}`;
+          const inView = y === p.year && m >= p.from && m <= p.to;
+          const on = hadPrev ? prev.has(val) : inView;
+          html += `<label><input type="checkbox" value="${val}" ${on ? "checked" : ""}> ${MONTHS[m-1]} ${y} (${n})</label>`;
+        }
+      }
+      box.innerHTML = html || "<p>No months with reports yet.</p>";
+    }
+    function selectedMonths() {
+      return new Set([...document.querySelectorAll("#monthPicks input:checked")].map(el => el.value));
+    }
     function blobToDataUrl(blob) {
       return new Promise((resolve, reject) => {
         const r = new FileReader();
@@ -496,17 +549,33 @@
         say("Could not load PDF tool. Check the internet and try again.");
         return;
       }
+      const months = selectedMonths();
+      if (!months.size) {
+        say("Tick the months you want to export.");
+        return;
+      }
       const keys = [...new Set([...Object.keys(data), ...photoDays])]
-        .filter(k => (typeof data[k] === "string" && data[k].trim()) || photoDays.has(k))
+        .filter(k => {
+          if (!((typeof data[k] === "string" && data[k].trim()) || photoDays.has(k))) return false;
+          const [y, m] = k.split("-").map(Number);
+          return months.has(`${y}-${m}`);
+        })
         .sort((a, b) => {
           const [y1, m1, d1] = a.split("-").map(Number);
           const [y2, m2, d2] = b.split("-").map(Number);
           return y1 - y2 || m1 - m2 || d1 - d2;
         });
       if (!keys.length) {
-        say("Nothing to export yet.");
+        say("Nothing to export in the selected months.");
         return;
       }
+      const monthNames = [...months].map(v => {
+        const [y, m] = v.split("-").map(Number);
+        return `${MONTHS[m-1]} ${y}`;
+      }).join(", ");
+      const fileLabel = [...months].length === 1
+        ? `daily-work-reports-${[...months][0].replace("-", "-")}.pdf`
+        : "daily-work-reports-selected.pdf";
       const doc = new window.jspdf.jsPDF({ unit: "mm", format: "a4" });
       const margin = 14;
       const maxW = 210 - margin * 2;
@@ -520,7 +589,7 @@
       y += 7;
       doc.setFont("helvetica", "normal");
       doc.setFontSize(10);
-      doc.text(`Exported ${new Date().toLocaleDateString("en-GB")}`, margin, y);
+      doc.text(`Exported ${new Date().toLocaleDateString("en-GB")} · ${monthNames}`, margin, y);
       y += 10;
       for (const k of keys) {
         const [yy, m, d] = k.split("-").map(Number);
@@ -562,9 +631,9 @@
       const url = URL.createObjectURL(blob);
       const link = document.getElementById("pdfLink");
       link.href = url;
-      link.download = "daily-work-reports.pdf";
+      link.download = fileLabel;
       link.hidden = false;
-      const file = new File([blob], "daily-work-reports.pdf", { type: "application/pdf" });
+      const file = new File([blob], fileLabel, { type: "application/pdf" });
       try {
         if (navigator.canShare && navigator.canShare({ files: [file] })) {
           await navigator.share({ files: [file], title: "Daily work reports" });
@@ -576,6 +645,12 @@
       }
       say("Tap Save PDF below, then Share → Save to Files.");
     }
+    document.getElementById("pdfAll").addEventListener("click", () => {
+      document.querySelectorAll("#monthPicks input").forEach(el => { el.checked = true; });
+    });
+    document.getElementById("pdfNone").addEventListener("click", () => {
+      document.querySelectorAll("#monthPicks input").forEach(el => { el.checked = false; });
+    });
     document.getElementById("pdfBtn").addEventListener("click", () => {
       exportPdf().catch(err => say("PDF failed. " + (err && err.message ? err.message : "Try again.")));
     });
