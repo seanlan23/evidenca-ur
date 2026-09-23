@@ -250,6 +250,7 @@
     const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
     const WD = ["Mo","Tu","We","Th","Fr","Sa","Su"];
     const KEY = "koledar-porocila-2026-2027";
+    const PHOTO_KEY = "koledar-porocila-photos-b64";
     const VIEW_KEY = "koledar-porocila-view";
     const PERIODS = [
       { year: 2026, from: 1, to: 8, label: "2026  jan – aug" },
@@ -270,6 +271,8 @@
     let openKey = null;
     let openUrls = [];
     let photoDays = new Set();
+    let photoB64 = {};
+    try { photoB64 = JSON.parse(load(PHOTO_KEY) || "{}") || {}; } catch (e) { photoB64 = {}; }
 
     const DB_NAME = "koledar-porocila-photos";
     function openDb() {
@@ -280,26 +283,44 @@
         req.onerror = () => reject(req.error);
       });
     }
+    function dataUrlToBlob(u) {
+      const parts = String(u).split(",");
+      const mime = ((parts[0].match(/:(.*?);/) || [])[1]) || "image/jpeg";
+      const bin = atob(parts[1] || "");
+      const arr = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+      return new Blob([arr], { type: mime });
+    }
     async function getPhotos(dayKey) {
       try {
         const db = await openDb();
-        return await new Promise((resolve, reject) => {
+        const fromDb = await new Promise((resolve, reject) => {
           const r = db.transaction("photos").objectStore("photos").get(dayKey);
           r.onsuccess = () => resolve(Array.isArray(r.result) ? r.result : []);
           r.onerror = () => reject(r.error);
         });
-      } catch (e) { return []; }
+        if (fromDb.length) return fromDb;
+      } catch (e) {}
+      return (photoB64[dayKey] || []).map(dataUrlToBlob);
     }
     async function setPhotos(dayKey, blobs) {
-      const db = await openDb();
-      await new Promise((resolve, reject) => {
-        const tx = db.transaction("photos", "readwrite");
-        if (blobs.length) tx.objectStore("photos").put(blobs, dayKey);
-        else tx.objectStore("photos").delete(dayKey);
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-      });
-      if (blobs.length) photoDays.add(dayKey); else photoDays.delete(dayKey);
+      try {
+        const db = await openDb();
+        await new Promise((resolve, reject) => {
+          const tx = db.transaction("photos", "readwrite");
+          if (blobs.length) tx.objectStore("photos").put(blobs, dayKey);
+          else tx.objectStore("photos").delete(dayKey);
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+        });
+      } catch (e) {}
+      const urls = [];
+      for (const b of blobs) {
+        try { urls.push(await blobToDataUrl(b)); } catch (e) {}
+      }
+      if (urls.length) photoB64[dayKey] = urls; else delete photoB64[dayKey];
+      try { save(PHOTO_KEY, JSON.stringify(photoB64)); } catch (e) {}
+      if (blobs.length || urls.length) photoDays.add(dayKey); else photoDays.delete(dayKey);
     }
     async function loadPhotoDays() {
       photoDays = new Set();
@@ -316,6 +337,9 @@
           r.onerror = () => reject(r.error);
         });
       } catch (e) {}
+      Object.keys(photoB64).forEach(k => {
+        if (Array.isArray(photoB64[k]) && photoB64[k].length) photoDays.add(k);
+      });
     }
     function compressImage(file) {
       return new Promise((resolve, reject) => {
@@ -464,7 +488,7 @@
       });
     }
 
-    function backupText() { return JSON.stringify(data, null, 2); }
+    function backupText() { return JSON.stringify({ reports: data, photos: photoB64 }, null, 2); }
     function say(msg) {
       const el = document.getElementById("syncMsg");
       el.hidden = false;
@@ -473,8 +497,17 @@
     function applyReports(raw) {
       const next = JSON.parse(String(raw));
       if (!next || typeof next !== "object" || Array.isArray(next)) throw new Error("bad");
-      data = next;
+      if (next.reports && typeof next.reports === "object") {
+        data = next.reports;
+        photoB64 = next.photos && typeof next.photos === "object" ? next.photos : {};
+      } else {
+        data = next;
+      }
       save(KEY, JSON.stringify(data));
+      try { save(PHOTO_KEY, JSON.stringify(photoB64)); } catch (e) {}
+      Object.keys(photoB64).forEach(k => {
+        if (Array.isArray(photoB64[k]) && photoB64[k].length) photoDays.add(k);
+      });
       render();
       say("Reports updated on this device.");
     }
@@ -542,6 +575,29 @@
         r.readAsDataURL(blob);
       });
     }
+    async function blobToJpegUrl(blob) {
+      const url = URL.createObjectURL(blob);
+      try {
+        const img = await new Promise((res, rej) => {
+          const i = new Image();
+          i.onload = () => res(i);
+          i.onerror = () => rej(new Error("image"));
+          i.src = url;
+        });
+        const c = document.createElement("canvas");
+        const max = 1100;
+        const scale = Math.min(1, max / Math.max(img.width, img.height));
+        c.width = Math.max(1, Math.round(img.width * scale));
+        c.height = Math.max(1, Math.round(img.height * scale));
+        const ctx = c.getContext("2d");
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(0, 0, c.width, c.height);
+        ctx.drawImage(img, 0, 0, c.width, c.height);
+        return c.toDataURL("image/jpeg", 0.72);
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    }
     async function exportPdf() {
       persistText();
       say("Preparing PDF…");
@@ -576,6 +632,13 @@
       const fileLabel = [...months].length === 1
         ? `daily-work-reports-${[...months][0].replace("-", "-")}.pdf`
         : "daily-work-reports-selected.pdf";
+      const photoMap = {};
+      let photoCount = 0;
+      for (const k of keys) {
+        const pics = await getPhotos(k);
+        photoMap[k] = pics;
+        photoCount += pics.length;
+      }
       const WEEK = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
       const navy = [30, 58, 76];
       const teal = [15, 118, 110];
@@ -617,8 +680,16 @@
       y = 40;
       doc.setTextColor(...muted);
       doc.setFontSize(9);
-      doc.text(`${keys.length} day${keys.length === 1 ? "" : "s"} · exported ${new Date().toLocaleDateString("en-GB")}`, margin, y);
-      y += 8;
+      doc.text(`${keys.length} day${keys.length === 1 ? "" : "s"} · ${photoCount} photo${photoCount === 1 ? "" : "s"} · exported ${new Date().toLocaleDateString("en-GB")}`, margin, y);
+      y += 6;
+      if (!photoCount) {
+        doc.setTextColor(185, 28, 28);
+        const warn = doc.splitTextToSize("No photos on this device. Export the PDF on the phone, or Copy reports on the phone and Paste them here first.", maxW);
+        doc.text(warn, margin, y);
+        y += warn.length * 4 + 4;
+        doc.setTextColor(...muted);
+      }
+      y += 2;
 
       doc.setFont("helvetica", "bold");
       doc.setFontSize(11);
@@ -648,7 +719,7 @@
         const monthLabel = `${MONTHS[m - 1]} ${yy}`;
         const title = `${WEEK[(dt.getDay() + 6) % 7]}  ${d} ${MONTHS[m - 1]} ${yy}`;
         const text = (data[k] || "").trim();
-        const blobs = await getPhotos(k);
+        const blobs = photoMap[k] || [];
         if (monthLabel !== lastMonth) {
           nextPage(20);
           doc.setFillColor(...navy);
@@ -691,7 +762,7 @@
             const prepared = [];
             for (const blob of pair) {
               try {
-                const url = await blobToDataUrl(blob);
+                const url = await blobToJpegUrl(blob);
                 const props = doc.getImageProperties(url);
                 let w = colW;
                 let h = w * props.height / props.width;
@@ -803,7 +874,33 @@
       showPhotos(openKey);
       render();
     });
-    loadPhotoDays().then(render);
+    async function exportIdbPhotosToBackup() {
+      try {
+        const db = await openDb();
+        const rows = [];
+        await new Promise((resolve, reject) => {
+          const r = db.transaction("photos").objectStore("photos").openCursor();
+          r.onsuccess = () => {
+            const c = r.result;
+            if (!c) { resolve(); return; }
+            rows.push([c.key, c.value]);
+            c.continue();
+          };
+          r.onerror = () => reject(r.error);
+        });
+        let changed = false;
+        for (const [k, blobs] of rows) {
+          if (photoB64[k] || !Array.isArray(blobs) || !blobs.length) continue;
+          const urls = [];
+          for (const b of blobs) {
+            try { urls.push(await blobToDataUrl(b)); } catch (e) {}
+          }
+          if (urls.length) { photoB64[k] = urls; changed = true; }
+        }
+        if (changed) try { save(PHOTO_KEY, JSON.stringify(photoB64)); } catch (e) {}
+      } catch (e) {}
+    }
+    loadPhotoDays().then(() => exportIdbPhotosToBackup()).then(render);
   </script>
 </body>
 </html>
